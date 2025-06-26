@@ -1,0 +1,308 @@
+# Default values for microservice chart
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+# Microservice configuration
+microservice:
+  name: ""
+  image:
+    registry: docker.io
+    repository: nginx
+    tag: "1.21"
+    pullPolicy: IfNotPresent
+  
+  # Environment variables
+  env: []
+    # - name: DATABASE_URL
+    #   value: "postgresql://user:pass@host:5432/db"
+  
+  # Environment variables from secrets/configmaps
+  envFrom: []
+    # - secretRef:
+    #     name: app-secrets
+    # - configMapRef:
+    #     name: app-config
+
+  # Ports configuration
+  ports:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+  
+  # Probes configuration
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+    successThreshold: 1
+  
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65534
+    capabilities:
+      drop:
+        - ALL
+  
+  # Volume mounts
+  volumeMounts: []
+    # - name: temp
+    #   mountPath: /tmp
+  
+  # Node selector
+  nodeSelector: {}
+  
+  # Tolerations
+  tolerations: []
+  
+  # Affinity
+  affinity: {}
+
+# Deployment configuration
+deployment:
+  enabled: true
+  replicaCount: 2
+  
+  # Deployment strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  
+  # Pod annotations
+  podAnnotations: {}
+  
+  # Pod labels
+  podLabels: {}
+  
+  # Pod security context
+  podSecurityContext:
+    fsGroup: 65534
+    runAsGroup: 65534
+    runAsUser: 65534
+  
+  # Volumes
+  volumes: []
+    # - name: temp
+    #   emptyDir: {}
+
+# Service configuration
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: http
+  annotations: {}
+  labels: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: chart-example-tls
+    #   hosts:
+    #     - chart-example.local
+
+# ConfigMap configuration
+configMap:
+  enabled: false
+  data: {}
+    # config.yaml: |
+    #   setting1: value1
+    #   setting2: value2
+
+# Secret configuration
+secret:
+  enabled: false
+  data: {}
+    # password: <base64-encoded-password>
+  stringData: {}
+    # username: admin
+
+# ServiceAccount configuration
+serviceAccount:
+  enabled: true
+  create: true
+  annotations: {}
+  name: ""
+  automountServiceAccountToken: false
+
+# RBAC configuration
+rbac:
+  enabled: false
+  rules: []
+    # - apiGroups: [""]
+    #   resources: ["pods"]
+    #   verbs: ["get", "list"]
+
+# HorizontalPodAutoscaler configuration
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# PodDisruptionBudget configuration
+pdb:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 50%
+
+# NetworkPolicy configuration
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+    # - from:
+    #     - namespaceSelector:
+    #         matchLabels:
+    #           name: allowed-namespace
+    #   ports:
+    #     - protocol: TCP
+    #       port: 8080
+  egress: []
+    # - to: []
+    #   ports:
+    #     - protocol: TCP
+    #       port: 5432
+
+# ServiceMonitor configuration (Prometheus)
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  labels: {}
+  annotations: {}
+
+# PrometheusRule configuration
+prometheusRule:
+  enabled: false
+  namespace: ""
+  rules: []
+    # - alert: HighErrorRate
+    #   expr: |
+    #     rate(http_requests_total{status=~"5.."}[5m]) /
+    #     rate(http_requests_total[5m]) * 100 > 5
+    #   for: 5m
+    #   labels:
+    #     severity: warning
+    #   annotations:
+    #     summary: High error rate detected
+
+# Database configuration (PostgreSQL)
+postgresql:
+  enabled: false
+  auth:
+    postgresPassword: "changeme"
+    username: "app"
+    password: "changeme"
+    database: "app"
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# Cache configuration (Redis)
+redis:
+  enabled: false
+  auth:
+    enabled: true
+    password: "changeme"
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# External database configuration
+externalDatabase:
+  enabled: false
+  type: postgresql # postgresql, mysql, mongodb
+  host: ""
+  port: 5432
+  username: ""
+  password: ""
+  database: ""
+  existingSecret: ""
+  existingSecretPasswordKey: ""
+
+# External cache configuration
+externalCache:
+  enabled: false
+  type: redis # redis, memcached
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: ""
+
+# Init containers
+initContainers: []
+  # - name: wait-for-db
+  #   image: busybox:1.35
+  #   command: ['sh', '-c', 'until nc -z database 5432; do sleep 1; done']
+
+# Sidecar containers
+sidecars: []
+  # - name: log-forwarder
+  #   image: fluent/fluent-bit:2.0
+  #   # ... configuration
+
+# Jobs
+jobs: []
+  # - name: migration
+  #   image: migrate/migrate:v4.15.2
+  #   command: ['migrate', '-path', '/migrations', '-database', 'postgres://...', 'up']
+
+# CronJobs
+cronJobs: []
+  # - name: backup
+  #   schedule: "0 2 * * *"
+  #   image: postgres:15
+  #   command: ['pg_dump', '...']

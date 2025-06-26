@@ -1,0 +1,80 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: application-base
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Base resources
+resources:
+  - application.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  platform.io/managed-by: kustomize
+  platform.io/stack: kubernetes
+
+# Common annotations
+commonAnnotations:
+  platform.io/version: v1.0.0
+  platform.io/generator: platform-team
+
+# Images to be updated
+images:
+  - name: nginx
+    newTag: "1.21"
+
+# ConfigMap generator
+configMapGenerator:
+  - name: application-env
+    literals:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - METRICS_ENABLED=true
+
+# Secret generator
+secretGenerator:
+  - name: application-secrets
+    literals:
+      - api-key=changeme
+      - jwt-secret=changeme
+
+# Patches
+patches:
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: KUSTOMIZE_ENV
+          value: "base"
+
+# Namespace
+namespace: application-base
+
+# Name prefix
+namePrefix: platform-
+
+# Name suffix
+# nameSuffix: -v1
+
+# Replicas
+replicas:
+  - name: application
+    count: 2
+
+# Resource transformers
+transformers:
+  - |
+    apiVersion: builtin
+    kind: AnnotationsTransformer
+    metadata:
+      name: addAnnotations
+    annotations:
+      platform.io/last-applied: 2024-01-01T00:00:00Z
+    fieldSpecs:
+      - path: metadata/annotations
+        create: true

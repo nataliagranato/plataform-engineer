@@ -1,0 +1,450 @@
+name: Infrastructure as Code
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/infrastructure.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - '.github/workflows/infrastructure.yml'
+  workflow_dispatch:
+
+env:
+  TF_VERSION: 1.6.0
+  TF_VAR_environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+
+jobs:
+  # Terraform validation and security
+  terraform-validate:
+    name: Terraform Validate & Security
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v3
+
+      - name: Run TFLint
+        run: tflint --recursive
+
+      - name: Setup TFSec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infrastructure/terraform
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure/terraform
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+
+      - name: Upload Checkov results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+
+  # Terraform plan for development
+  terraform-plan-dev:
+    name: Terraform Plan (Dev)
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/environments/dev
+    env:
+      TF_VAR_environment: dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-dev
+          path: infrastructure/terraform/environments/dev/tfplan
+
+  # Terraform apply for development
+  terraform-apply-dev:
+    name: Terraform Apply (Dev)
+    runs-on: ubuntu-latest
+    needs: terraform-plan-dev
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: development
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/environments/dev
+    env:
+      TF_VAR_environment: dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan-dev
+          path: infrastructure/terraform/environments/dev/
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply tfplan
+
+  # Terraform plan for production
+  terraform-plan-prod:
+    name: Terraform Plan (Prod)
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/environments/prod
+    env:
+      TF_VAR_environment: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-prod
+          path: infrastructure/terraform/environments/prod/tfplan
+
+  # Terraform apply for production (manual approval required)
+  terraform-apply-prod:
+    name: Terraform Apply (Prod)
+    runs-on: ubuntu-latest
+    needs: terraform-plan-prod
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+    defaults:
+      run:
+        working-directory: infrastructure/terraform/environments/prod
+    env:
+      TF_VAR_environment: prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_PROD }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan-prod
+          path: infrastructure/terraform/environments/prod/
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply tfplan
+
+  # Crossplane installation and configuration
+  crossplane-deploy:
+    name: Deploy Crossplane
+    runs-on: ubuntu-latest
+    needs: [terraform-apply-dev]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Update kubeconfig
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            aws eks update-kubeconfig --region us-east-1 --name platform-prod
+          else
+            aws eks update-kubeconfig --region us-east-1 --name platform-dev
+          fi
+
+      - name: Install Crossplane
+        run: |
+          cd infrastructure/crossplane/install
+          chmod +x install.sh
+          ./install.sh
+
+      - name: Wait for Crossplane to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=crossplane --timeout=300s -n crossplane-system
+
+      - name: Apply Crossplane providers
+        run: |
+          kubectl apply -f infrastructure/crossplane/providers/
+          kubectl wait --for=condition=healthy provider.pkg.crossplane.io --all --timeout=300s
+
+      - name: Apply Crossplane compositions
+        run: |
+          kubectl apply -f infrastructure/crossplane/compositions/
+
+  # ArgoCD deployment
+  argocd-deploy:
+    name: Deploy ArgoCD
+    runs-on: ubuntu-latest
+    needs: [crossplane-deploy]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Update kubeconfig
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            aws eks update-kubeconfig --region us-east-1 --name platform-prod
+          else
+            aws eks update-kubeconfig --region us-east-1 --name platform-dev
+          fi
+
+      - name: Install ArgoCD
+        run: |
+          kubectl apply -f argocd/install/
+
+      - name: Wait for ArgoCD to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server --timeout=300s -n argocd
+
+      - name: Apply ArgoCD projects
+        run: |
+          kubectl apply -f argocd/projects/
+
+      - name: Apply ArgoCD applications
+        run: |
+          kubectl apply -f argocd/applications/
+
+  # Observability stack deployment
+  observability-deploy:
+    name: Deploy Observability Stack
+    runs-on: ubuntu-latest
+    needs: [argocd-deploy]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Update kubeconfig
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            aws eks update-kubeconfig --region us-east-1 --name platform-prod
+          else
+            aws eks update-kubeconfig --region us-east-1 --name platform-dev
+          fi
+
+      - name: Create observability namespace
+        run: |
+          kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Prometheus
+        run: |
+          kubectl apply -f observability/prometheus/
+
+      - name: Deploy Grafana
+        run: |
+          kubectl apply -f observability/grafana/
+
+      - name: Deploy Jaeger
+        run: |
+          kubectl apply -f observability/jaeger/
+
+      - name: Deploy Fluentd
+        run: |
+          kubectl apply -f observability/fluentd/
+
+      - name: Wait for observability stack to be ready
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus --timeout=300s -n observability
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana --timeout=300s -n observability
+
+  # Infrastructure tests
+  infrastructure-tests:
+    name: Infrastructure Tests
+    runs-on: ubuntu-latest
+    needs: [observability-deploy]
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Update kubeconfig
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            aws eks update-kubeconfig --region us-east-1 --name platform-prod
+          else
+            aws eks update-kubeconfig --region us-east-1 --name platform-dev
+          fi
+
+      - name: Run infrastructure validation
+        run: |
+          chmod +x scripts/validate.sh
+          ./scripts/validate.sh
+
+      - name: Test Crossplane functionality
+        run: |
+          # Test that Crossplane can create resources
+          kubectl apply -f infrastructure/crossplane/claims/examples.yaml
+          sleep 30
+          kubectl get applications.platform.io
+
+      - name: Test observability stack
+        run: |
+          # Test Prometheus is scraping metrics
+          kubectl port-forward svc/prometheus-service 9090:9090 -n observability &
+          sleep 5
+          curl -f http://localhost:9090/api/v1/targets
+
+  # Notification
+  notify:
+    name: Notify Teams
+    runs-on: ubuntu-latest
+    needs: [infrastructure-tests]
+    if: always()
+    steps:
+      - name: Notify Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#platform-team'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

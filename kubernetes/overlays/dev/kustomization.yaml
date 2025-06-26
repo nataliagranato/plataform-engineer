@@ -1,0 +1,112 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: application-dev
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Base configuration
+bases:
+  - ../../base
+
+# Environment-specific namespace
+namespace: development
+
+# Environment-specific labels
+commonLabels:
+  platform.io/environment: development
+  platform.io/tier: dev
+
+# Environment-specific annotations
+commonAnnotations:
+  platform.io/environment: development
+  platform.io/contact: dev-team@company.com
+
+# Name suffix for dev environment
+nameSuffix: -dev
+
+# Replicas for development
+replicas:
+  - name: application
+    count: 1
+
+# Images for development
+images:
+  - name: nginx
+    newTag: "1.21-dev"
+
+# ConfigMap generator for dev
+configMapGenerator:
+  - name: application-env-dev
+    behavior: merge
+    literals:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - DEBUG=true
+      - METRICS_ENABLED=true
+
+# Secret generator for dev
+secretGenerator:
+  - name: application-secrets-dev
+    behavior: merge
+    literals:
+      - database-url=postgresql://dev:dev@postgres-dev:5432/app_dev
+      - redis-url=redis://redis-dev:6379/0
+
+# Patches for development environment
+patches:
+  # Reduce resource requirements for dev
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "50m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "64Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+
+  # Add debug environment variables
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DEBUG
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ENVIRONMENT
+          value: "development"
+
+  # Update service to NodePort for easier access in dev
+  - target:
+      kind: Service
+      name: application
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
+
+  # Disable network policies in dev for easier debugging
+  - target:
+      kind: NetworkPolicy
+      name: application-netpol
+    patch: |-
+      - op: replace
+        path: /spec/policyTypes
+        value: []

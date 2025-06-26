@@ -1,0 +1,145 @@
+app:
+  title: Platform Engineering Portal
+  baseUrl: http://localhost:3000
+
+organization:
+  name: Platform Team
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+      database: ${POSTGRES_DB}
+
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}
+  gitlab:
+    - host: gitlab.com
+      token: ${GITLAB_TOKEN}
+  awsS3:
+    - host: amazonaws.com
+      region: ${AWS_REGION}
+      accessKeyId: ${AWS_ACCESS_KEY_ID}
+      secretAccessKey: ${AWS_SECRET_ACCESS_KEY}
+
+techdocs:
+  builder: 'local'
+  generator:
+    runIn: 'local'
+  publisher:
+    type: 'awsS3'
+    awsS3:
+      bucketName: ${TECHDOCS_S3_BUCKET_NAME}
+      region: ${AWS_REGION}
+
+auth:
+  environment: development
+  providers:
+    github:
+      development:
+        clientId: ${AUTH_GITHUB_CLIENT_ID}
+        clientSecret: ${AUTH_GITHUB_CLIENT_SECRET}
+    gitlab:
+      development:
+        clientId: ${AUTH_GITLAB_CLIENT_ID}
+        clientSecret: ${AUTH_GITLAB_CLIENT_SECRET}
+        audience: ${GITLAB_BASE_URL}
+
+scaffolder:
+  defaultAuthor:
+    name: Platform Team
+    email: platform-team@company.com
+  defaultCommitMessage: 'Initial commit from Backstage'
+
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+    pullRequestBranchName: backstage-integration
+  rules:
+    - allow: [Component, System, API, Resource, Location]
+  locations:
+    # Platform components
+    - type: file
+      target: ../../backstage/catalog/platform/all.yaml
+    
+    # Application templates
+    - type: file
+      target: ../../backstage/templates/*/template.yaml
+      rules:
+        - allow: [Template]
+    
+    # Systems catalog
+    - type: file
+      target: ../../backstage/catalog/systems/*.yaml
+    
+    # APIs catalog
+    - type: file
+      target: ../../backstage/catalog/apis/*.yaml
+
+kubernetes:
+  serviceLocatorMethod:
+    type: 'multiTenant'
+  clusterLocatorMethods:
+    - type: 'config'
+      clusters:
+        - url: ${K8S_CLUSTER_URL}
+          name: platform-cluster
+          authProvider: 'serviceAccount'
+          skipTLSVerify: false
+          serviceAccountToken: ${K8S_CLUSTER_TOKEN}
+
+proxy:
+  '/argocd/api':
+    target: ${ARGOCD_BASE_URL}/api/v1/
+    changeOrigin: true
+    secure: false
+    headers:
+      Cookie: ${ARGOCD_AUTH_TOKEN}
+  
+  '/grafana/api':
+    target: ${GRAFANA_BASE_URL}
+    changeOrigin: true
+    secure: false
+    headers:
+      Authorization: Bearer ${GRAFANA_TOKEN}
+  
+  '/prometheus/api':
+    target: ${PROMETHEUS_BASE_URL}
+    changeOrigin: true
+
+costInsights:
+  engineerCost: 200000
+  products:
+    computeEngine:
+      name: Compute Engine
+      icon: compute
+    cloudDataflow:
+      name: Cloud Dataflow
+      icon: data
+    cloudStorage:
+      name: Cloud Storage
+      icon: storage
+    bigQuery:
+      name: BigQuery
+      icon: search
+  metrics:
+    DAU:
+      name: Daily Active Users
+      default: true
+    MSC:
+      name: Monthly Subscription Cost

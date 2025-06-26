@@ -1,0 +1,193 @@
+# Example Application Claims
+# These examples show how developers can request infrastructure resources using Crossplane
+
+---
+# Development Environment Application
+apiVersion: platform.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app-dev
+  namespace: default
+spec:
+  parameters:
+    name: my-app
+    environment: dev
+    region: us-east-1
+    version: "1.28"
+    
+    # Networking configuration
+    networking:
+      vpcCidr: "10.0.0.0/16"
+      publicSubnets:
+        - "10.0.1.0/24"
+        - "10.0.2.0/24"
+      privateSubnets:
+        - "10.0.10.0/24"
+        - "10.0.20.0/24"
+    
+    # Node Group configuration
+    nodeGroup:
+      instanceTypes: ["t3.medium"]
+      minSize: 1
+      maxSize: 5
+      desiredSize: 2
+      diskSize: 20
+    
+    # Database configuration (optional)
+    database:
+      enabled: true
+      engine: postgres
+      engineVersion: "15.4"
+      instanceClass: db.t3.micro
+      allocatedStorage: 20
+      multiAz: false
+    
+    # Application configuration
+    application:
+      replicas: 2
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+      
+    # Security configuration
+    security:
+      networkPolicies: true
+      podSecurityStandards: "restricted"
+      encryption:
+        atRest: true
+        inTransit: true
+    
+    # Monitoring configuration
+    monitoring:
+      enabled: true
+      metrics: true
+      logs: true
+      traces: true
+      alerts: true
+
+  # Connection secret will be created here
+  writeConnectionSecretsToRef:
+    name: my-app-dev-connection
+    namespace: default
+
+---
+# Production Environment Application
+apiVersion: platform.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app-prod
+  namespace: production
+spec:
+  parameters:
+    name: my-app
+    environment: prod
+    region: us-east-1
+    version: "1.28"
+    
+    # Networking configuration - larger CIDR for production
+    networking:
+      vpcCidr: "10.1.0.0/16"
+      publicSubnets:
+        - "10.1.1.0/24"
+        - "10.1.2.0/24"
+        - "10.1.3.0/24"
+      privateSubnets:
+        - "10.1.10.0/24"
+        - "10.1.20.0/24"
+        - "10.1.30.0/24"
+    
+    # Node Group configuration - larger for production
+    nodeGroup:
+      instanceTypes: ["t3.large", "t3.xlarge"]
+      minSize: 3
+      maxSize: 20
+      desiredSize: 6
+      diskSize: 50
+    
+    # Database configuration - production ready
+    database:
+      enabled: true
+      engine: postgres
+      engineVersion: "15.4"
+      instanceClass: db.r5.large
+      allocatedStorage: 100
+      multiAz: true
+      backupRetentionPeriod: 30
+      deletionProtection: true
+    
+    # Application configuration - production scale
+    application:
+      replicas: 6
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "256Mi"
+        limits:
+          cpu: "1000m"
+          memory: "1Gi"
+      
+    # Security configuration - enhanced for production
+    security:
+      networkPolicies: true
+      podSecurityStandards: "restricted"
+      encryption:
+        atRest: true
+        inTransit: true
+      secretsEncryption: true
+      auditLogs: true
+    
+    # Monitoring configuration - comprehensive
+    monitoring:
+      enabled: true
+      metrics: true
+      logs: true
+      traces: true
+      alerts: true
+      dashboards: true
+      slos: true
+
+  writeConnectionSecretsToRef:
+    name: my-app-prod-connection
+    namespace: production
+## Full Stack Application with Database
+apiVersion: platform.io/v1alpha1
+kind: Application
+metadata:
+  name: fullstack-app
+  namespace: production
+spec:
+  parameters:
+    name: fullstack-app
+    environment: prod
+    replicas: 5
+    resources:
+      cpu: "500m"
+      memory: "1Gi"
+    database:
+      enabled: true
+      engine: postgresql
+      size: "100Gi"
+
+---
+## Microservice with MySQL
+apiVersion: platform.io/v1alpha1
+kind: Application
+metadata:
+  name: user-service
+  namespace: staging
+spec:
+  parameters:
+    name: user-service
+    environment: staging
+    replicas: 3
+    resources:
+      cpu: "200m"
+      memory: "512Mi"
+    database:
+      enabled: true
+      engine: mysql
+      size: "50Gi"

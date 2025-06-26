@@ -1,0 +1,110 @@
+name: Platform Engineering Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: '3.13.0'
+      
+      - name: Package Helm Charts
+        run: |
+          mkdir -p dist/charts
+          for chart in helm/charts/*/; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              helm package "$chart" -d dist/charts/
+            fi
+          done
+      
+      - name: Create Terraform Modules Archive
+        run: |
+          mkdir -p dist/terraform
+          tar -czf dist/terraform/modules.tar.gz -C infrastructure/terraform modules/
+      
+      - name: Create Documentation Archive
+        run: |
+          tar -czf dist/docs.tar.gz docs/
+      
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          echo "## What's Changed" > release_notes.md
+          echo "" >> release_notes.md
+          git log --pretty=format:"* %s (%h)" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> release_notes.md
+          echo "" >> release_notes.md
+          echo "## Infrastructure Components" >> release_notes.md
+          echo "- Terraform Modules for AWS" >> release_notes.md
+          echo "- Crossplane Providers and Compositions" >> release_notes.md
+          echo "- ArgoCD Applications" >> release_notes.md
+          echo "- Monitoring Stack (Prometheus + Grafana)" >> release_notes.md
+          echo "- Backstage Templates" >> release_notes.md
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: release_notes.md
+          files: |
+            dist/charts/*.tgz
+            dist/terraform/modules.tar.gz
+            dist/docs.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update Changelog
+        run: |
+          echo "## [${{ github.ref_name }}] - $(date +%Y-%m-%d)" >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          echo "### Added" >> temp_changelog.md
+          git log --pretty=format:"- %s" --grep="^Add:" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          echo "### Changed" >> temp_changelog.md
+          git log --pretty=format:"- %s" --grep="^Change:" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          echo "### Fixed" >> temp_changelog.md
+          git log --pretty=format:"- %s" --grep="^Fix:" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          
+          # Prepend new changes to existing changelog
+          if [ -f CHANGELOG.md ]; then
+            head -n 10 CHANGELOG.md > existing_header.md
+            tail -n +11 CHANGELOG.md > existing_content.md
+            cat existing_header.md temp_changelog.md existing_content.md > CHANGELOG.md
+          else
+            cat temp_changelog.md > CHANGELOG.md
+          fi
+          
+          rm temp_changelog.md existing_header.md existing_content.md 2>/dev/null || true
+      
+      - name: Commit Changelog
+        run: |
+          git add CHANGELOG.md
+          git commit -m "Update CHANGELOG for ${{ github.ref_name }}" || exit 0
+          git push origin main

@@ -1,0 +1,327 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-config
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/component: tracing
+data:
+  jaeger.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      pprof:
+        endpoint: localhost:1777
+      zpages:
+        endpoint: localhost:55679
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          thrift_compact:
+            endpoint: 0.0.0.0:6831
+          thrift_binary:
+            endpoint: 0.0.0.0:6832
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      memory_limiter:
+        limit_mib: 512
+
+    exporters:
+      jaeger:
+        endpoint: jaeger-collector:14250
+        tls:
+          insecure: true
+      logging:
+        loglevel: debug
+
+    service:
+      extensions: [health_check, pprof, zpages]
+      pipelines:
+        traces:
+          receivers: [otlp, jaeger, zipkin]
+          processors: [memory_limiter, batch]
+          exporters: [jaeger, logging]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-collector
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger-collector
+    app.kubernetes.io/component: tracing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger-collector
+      app.kubernetes.io/component: tracing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jaeger-collector
+        app.kubernetes.io/component: tracing
+    spec:
+      containers:
+      - name: jaeger-collector
+        image: jaegertracing/jaeger-collector:1.50
+        ports:
+        - name: grpc
+          containerPort: 14250
+          protocol: TCP
+        - name: http
+          containerPort: 14268
+          protocol: TCP
+        - name: admin
+          containerPort: 14269
+          protocol: TCP
+        env:
+        - name: SPAN_STORAGE_TYPE
+          value: elasticsearch
+        - name: ES_SERVER_URLS
+          value: http://elasticsearch:9200
+        - name: ES_USERNAME
+          value: elastic
+        - name: ES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: admin
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: admin
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-query
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger-query
+    app.kubernetes.io/component: tracing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger-query
+      app.kubernetes.io/component: tracing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jaeger-query
+        app.kubernetes.io/component: tracing
+    spec:
+      containers:
+      - name: jaeger-query
+        image: jaegertracing/jaeger-query:1.50
+        ports:
+        - name: http
+          containerPort: 16686
+          protocol: TCP
+        - name: grpc
+          containerPort: 16685
+          protocol: TCP
+        - name: admin
+          containerPort: 16687
+          protocol: TCP
+        env:
+        - name: SPAN_STORAGE_TYPE
+          value: elasticsearch
+        - name: ES_SERVER_URLS
+          value: http://elasticsearch:9200
+        - name: ES_USERNAME
+          value: elastic
+        - name: ES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: elasticsearch-credentials
+              key: password
+        - name: QUERY_BASE_PATH
+          value: /jaeger
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: admin
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: admin
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: jaeger-agent
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger-agent
+    app.kubernetes.io/component: tracing
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger-agent
+      app.kubernetes.io/component: tracing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jaeger-agent
+        app.kubernetes.io/component: tracing
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: jaeger-agent
+        image: jaegertracing/jaeger-agent:1.50
+        ports:
+        - name: compact
+          containerPort: 6831
+          protocol: UDP
+          hostPort: 6831
+        - name: binary
+          containerPort: 6832
+          protocol: UDP
+          hostPort: 6832
+        - name: http
+          containerPort: 5778
+          protocol: TCP
+          hostPort: 5778
+        - name: admin
+          containerPort: 14271
+          protocol: TCP
+          hostPort: 14271
+        args:
+        - --reporter.grpc.host-port=jaeger-collector:14250
+        - --reporter.type=grpc
+        - --agent.tags=host.name=$(NODE_NAME)
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger-collector
+    app.kubernetes.io/component: tracing
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: 14250
+    targetPort: grpc
+    protocol: TCP
+  - name: http
+    port: 14268
+    targetPort: http
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: jaeger-collector
+    app.kubernetes.io/component: tracing
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger-query
+    app.kubernetes.io/component: tracing
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 16686
+    targetPort: http
+    protocol: TCP
+  - name: grpc
+    port: 16685
+    targetPort: grpc
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: jaeger-query
+    app.kubernetes.io/component: tracing
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jaeger-ingress
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/component: tracing
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: platform.local
+    http:
+      paths:
+      - path: /jaeger(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: jaeger-query
+            port:
+              number: 16686

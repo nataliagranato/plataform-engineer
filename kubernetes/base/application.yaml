@@ -1,0 +1,253 @@
+# Kubernetes Base Manifests
+# These are base templates that can be customized with Kustomize overlays
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: application-base
+  labels:
+    app.kubernetes.io/managed-by: platform-team
+    platform.io/environment: base
+    platform.io/tier: application
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: application
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: platform
+    app.kubernetes.io/managed-by: platform-team
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: application
+      app.kubernetes.io/instance: application
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: application
+        app.kubernetes.io/instance: application
+        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+      - name: application
+        image: nginx:1.21
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: METRICS_PORT
+          value: "8081"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: NODE_ENV
+          value: "production"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/cache
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: application
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: http
+    protocol: TCP
+    name: http
+  - port: 8081
+    targetPort: metrics
+    protocol: TCP
+    name: metrics
+  selector:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: application
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/component: backend
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: application-config
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/component: backend
+data:
+  app.yaml: |
+    server:
+      port: 8080
+      metrics_port: 8081
+    
+    logging:
+      level: info
+      format: json
+    
+    features:
+      metrics: true
+      health_checks: true
+      graceful_shutdown: true
+    
+    timeouts:
+      read: 30s
+      write: 30s
+      idle: 60s
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: application-netpol
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/component: backend
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: application
+      app.kubernetes.io/instance: application
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          platform.io/network-policy: allow
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: prometheus
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 8081
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          platform.io/network-policy: allow
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: application
+  namespace: application-base
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application
+    app.kubernetes.io/component: backend
+    prometheus.io/monitor: "true"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: application
+      app.kubernetes.io/instance: application
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    honorLabels: true

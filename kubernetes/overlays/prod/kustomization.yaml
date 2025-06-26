@@ -1,0 +1,169 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: application-prod
+  annotations:
+    config.kubernetes.io/local-config: "true"
+
+# Base configuration
+bases:
+  - ../../base
+
+# Environment-specific namespace
+namespace: production
+
+# Environment-specific labels
+commonLabels:
+  platform.io/environment: production
+  platform.io/tier: prod
+  platform.io/criticality: high
+
+# Environment-specific annotations
+commonAnnotations:
+  platform.io/environment: production
+  platform.io/contact: platform-team@company.com
+  platform.io/sla: "99.9%"
+  platform.io/backup: "required"
+
+# Name suffix for production environment
+nameSuffix: -prod
+
+# Replicas for production
+replicas:
+  - name: application
+    count: 6
+
+# Images for production
+images:
+  - name: nginx
+    newTag: "1.21"
+    digest: sha256:abc123...  # Use digest for production for security
+
+# ConfigMap generator for production
+configMapGenerator:
+  - name: application-env-prod
+    behavior: merge
+    literals:
+      - NODE_ENV=production
+      - LOG_LEVEL=warn
+      - DEBUG=false
+      - METRICS_ENABLED=true
+      - HEALTH_CHECK_ENABLED=true
+      - GRACEFUL_SHUTDOWN_TIMEOUT=30s
+
+# Secret generator for production (secrets should come from external secret management)
+secretGenerator:
+  - name: application-secrets-prod
+    behavior: merge
+    files:
+      - database-url=secrets/database-url
+      - redis-url=secrets/redis-url
+      - jwt-secret=secrets/jwt-secret
+      - api-key=secrets/api-key
+
+# Patches for production environment
+patches:
+  # Increase resource requirements for production
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "200m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "256Mi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "1Gi"
+
+  # Add production-specific environment variables
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ENVIRONMENT
+          value: "production"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: ENABLE_PROFILING
+          value: "false"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: MAX_CONNECTIONS
+          value: "1000"
+
+  # Add rolling update strategy for zero downtime
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 25%
+            maxSurge: 25%
+
+  # Add pod anti-affinity for high availability
+  - target:
+      kind: Deployment
+      name: application
+    patch: |-
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                    - application
+                topologyKey: kubernetes.io/hostname
+
+  # Add strict network policies
+  - target:
+      kind: NetworkPolicy
+      name: application-netpol
+    patch: |-
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+          - namespaceSelector:
+              matchLabels:
+                name: database
+          ports:
+          - protocol: TCP
+            port: 5432
+      - op: add
+        path: /spec/egress/-
+        value:
+          to:
+          - namespaceSelector:
+              matchLabels:
+                name: cache
+          ports:
+          - protocol: TCP
+            port: 6379
+
+# Additional resources for production
+resources:
+  - hpa.yaml
+  - pdb.yaml
+  - ingress.yaml

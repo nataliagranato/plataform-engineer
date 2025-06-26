@@ -1,0 +1,71 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xapplications.platform.io
+spec:
+  group: platform.io
+  names:
+    kind: XApplication
+    plural: xapplications
+  claimNames:
+    kind: Application
+    plural: applications
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    description: "Name of the application"
+                  environment:
+                    type: string
+                    description: "Environment (dev, staging, prod)"
+                    enum: ["dev", "staging", "prod"]
+                  replicas:
+                    type: integer
+                    description: "Number of replicas"
+                    default: 2
+                  resources:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                        default: "100m"
+                      memory:
+                        type: string
+                        default: "128Mi"
+                  database:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: false
+                      engine:
+                        type: string
+                        enum: ["postgresql", "mysql"]
+                        default: "postgresql"
+                      size:
+                        type: string
+                        default: "20Gi"
+                required:
+                - name
+                - environment
+            required:
+            - parameters
+          status:
+            type: object
+            properties:
+              applicationUrl:
+                type: string
+              databaseEndpoint:
+                type: string

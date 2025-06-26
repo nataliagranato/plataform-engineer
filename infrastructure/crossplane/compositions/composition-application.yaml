@@ -1,0 +1,385 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xapplication
+  labels:
+    provider: aws
+    service: application
+    version: v1alpha1
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: platform.io/v1alpha1
+    kind: XApplication
+  
+  resources:
+    # VPC
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: VPC
+        spec:
+          forProvider:
+            region: us-east-1
+            cidrBlock: 10.0.0.0/16
+            enableDnsHostnames: true
+            enableDnsSupport: true
+            tags:
+              Name: platform-vpc
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.networking.vpcCidr
+          toFieldPath: spec.forProvider.cidrBlock
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-vpc"
+
+    # Internet Gateway
+    - name: igw
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: InternetGateway
+        spec:
+          forProvider:
+            region: us-east-1
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: platform-igw
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-igw"
+
+    # Public Subnet 1
+    - name: subnet-public-1
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: us-east-1a
+            access: public
+            network: cluster
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1a
+            cidrBlock: 10.0.1.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIpOnLaunch: true
+            tags:
+              Name: platform-subnet-public-1
+              kubernetes.io/role/elb: "1"
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-subnet-public-1"
+
+    # Public Subnet 2
+    - name: subnet-public-2
+      base:
+        apiVersion: ec2.aws.crossplane.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            zone: us-east-1b
+            access: public
+            network: cluster
+        spec:
+          forProvider:
+            region: us-east-1
+            availabilityZone: us-east-1b
+            cidrBlock: 10.0.2.0/24
+            vpcIdSelector:
+              matchControllerRef: true
+            mapPublicIpOnLaunch: true
+            tags:
+              Name: platform-subnet-public-2
+              kubernetes.io/role/elb: "1"
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-subnet-public-2"
+
+    # IAM Role for Cluster
+    - name: iamrole-cluster
+      base:
+        apiVersion: iam.aws.crossplane.io/v1beta1
+        kind: Role
+        metadata:
+          labels:
+            role: cluster
+        spec:
+          forProvider:
+            assumeRolePolicyDocument: |
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": {
+                      "Service": "eks.amazonaws.com"
+                    },
+                    "Action": "sts:AssumeRole"
+                  }
+                ]
+              }
+            tags:
+              Name: platform-cluster-role
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-cluster-role"
+
+    # EKS Cluster
+    - name: eks-cluster
+      base:
+        apiVersion: eks.aws.crossplane.io/v1beta1
+        kind: Cluster
+        spec:
+          forProvider:
+            region: us-east-1
+            version: "1.28"
+            roleArnSelector:
+              matchLabels:
+                role: cluster
+            resourcesVpcConfig:
+              - subnetIdSelector:
+                  matchLabels:
+                    network: cluster
+                endpointConfigPrivateAccess: true
+                endpointConfigPublicAccess: true
+          writeConnectionSecretsToRef:
+            namespace: crossplane-system
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.version
+          toFieldPath: spec.forProvider.version
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-cluster"
+
+    # Node Group
+    - name: eks-nodegroup
+      base:
+      apiVersion: eks.aws.crossplane.io/v1alpha1
+      kind: NodeGroup
+      metadata:
+        name: app-nodegroup
+      spec:
+        forProvider:
+          region: us-east-1
+          clusterNameSelector:
+            matchControllerRef: true
+          nodeRoleSelector:
+            matchLabels:
+              usage: eks-nodegroup
+          subnetIdSelector:
+            matchLabels:
+              access: private
+          scalingConfig:
+          - desiredSize: 2
+            maxSize: 5
+            minSize: 1
+          instanceTypes:
+          - t3.medium
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.name
+      toFieldPath: metadata.name
+      transforms:
+      - type: string
+        string:
+          fmt: "%s-nodegroup"
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.replicas
+      toFieldPath: spec.forProvider.scalingConfig[0].desiredSize
+
+  # RDS Database (conditional)
+  - name: rds-database
+    base:
+      apiVersion: rds.aws.crossplane.io/v1alpha1
+      kind: DBInstance
+      metadata:
+        name: app-database
+      spec:
+        forProvider:
+          region: us-east-1
+          dbInstanceClass: db.t3.micro
+          engine: postgres
+          engineVersion: "15.4"
+          dbName: appdb
+          masterUsername: postgres
+          allocatedStorage: 20
+          storageType: gp2
+          storageEncrypted: true
+          vpcSecurityGroupIdSelector:
+            matchLabels:
+              usage: database
+          dbSubnetGroupNameSelector:
+            matchLabels:
+              usage: database
+        writeConnectionSecretToRef:
+          namespace: crossplane-system
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.name
+      toFieldPath: metadata.name
+      transforms:
+      - type: string
+        string:
+          fmt: "%s-db"
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.database.engine
+      toFieldPath: spec.forProvider.engine
+      transforms:
+      - type: map
+        map:
+          postgresql: postgres
+          mysql: mysql
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.database.size
+      toFieldPath: spec.forProvider.allocatedStorage
+      transforms:
+      - type: string
+        string:
+          type: Regexp
+          regexp:
+            match: '(\d+)Gi'
+            group: 1
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.database.enabled
+      toFieldPath: metadata.annotations["crossplane.io/external-name"]
+      policy:
+        fromFieldPath: Required
+      transforms:
+      - type: string
+        string:
+          fmt: "%s"
+    # Only create database if enabled
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.database.enabled
+      toFieldPath: spec.forProvider.skipFinalSnapshot
+      transforms:
+      - type: convert
+        convert:
+          toType: bool
+
+  # Application Deployment
+  - name: app-deployment
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: app
+              namespace: default
+            spec:
+              replicas: 2
+              selector:
+                matchLabels:
+                  app: myapp
+              template:
+                metadata:
+                  labels:
+                    app: myapp
+                spec:
+                  containers:
+                  - name: app
+                    image: nginx:latest
+                    ports:
+                    - containerPort: 80
+                    resources:
+                      requests:
+                        cpu: 100m
+                        memory: 128Mi
+                      limits:
+                        cpu: 200m
+                        memory: 256Mi
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.name
+      toFieldPath: spec.forProvider.manifest.metadata.name
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.replicas
+      toFieldPath: spec.forProvider.manifest.spec.replicas
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.resources.cpu
+      toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].resources.requests.cpu
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.resources.memory
+      toFieldPath: spec.forProvider.manifest.spec.template.spec.containers[0].resources.requests.memory
+
+  # Service
+  - name: app-service
+    base:
+      apiVersion: kubernetes.crossplane.io/v1alpha1
+      kind: Object
+      spec:
+        forProvider:
+          manifest:
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: app-service
+              namespace: default
+            spec:
+              selector:
+                app: myapp
+              ports:
+              - port: 80
+                targetPort: 80
+              type: LoadBalancer
+    patches:
+    - type: FromCompositeFieldPath
+      fromFieldPath: spec.parameters.name
+      toFieldPath: spec.forProvider.manifest.metadata.name
+      transforms:
+      - type: string
+        string:
+          fmt: "%s-service"

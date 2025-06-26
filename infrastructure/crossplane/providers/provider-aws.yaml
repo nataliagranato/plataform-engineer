@@ -1,0 +1,47 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws
+  annotations:
+    meta.crossplane.io/maintainer: Crossplane Maintainers <support@crossplane.io>
+    meta.crossplane.io/source: github.com/crossplane-contrib/provider-aws
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      The AWS provider for Crossplane adds support for managing AWS resources in Kubernetes.
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-aws:v0.44.0
+  packagePullPolicy: Always
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-kubernetes
+  annotations:
+    meta.crossplane.io/maintainer: Crossplane Maintainers <support@crossplane.io>
+    meta.crossplane.io/source: github.com/crossplane-contrib/provider-kubernetes
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      The Kubernetes provider for Crossplane adds support for managing Kubernetes resources in Kubernetes.
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.11.0
+  packagePullPolicy: Always
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-helm
+  annotations:
+    meta.crossplane.io/maintainer: Crossplane Maintainers <support@crossplane.io>
+    meta.crossplane.io/source: github.com/crossplane-contrib/provider-helm
+    meta.crossplane.io/license: Apache-2.0
+    meta.crossplane.io/description: |
+      The Helm provider for Crossplane adds support for managing Helm releases in Kubernetes.
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/provider-helm:v0.15.0
+  packagePullPolicy: Always
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1

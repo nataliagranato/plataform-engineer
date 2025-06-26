@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  description: Platform Engineering Project
+  
+  sourceRepos:
+  - '*'
+  
+  destinations:
+  - namespace: '*'
+    server: https://kubernetes.default.svc
+  
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  - group: ''
+    kind: PersistentVolume
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRole
+  - group: rbac.authorization.k8s.io
+    kind: ClusterRoleBinding
+  - group: apiextensions.k8s.io
+    kind: CustomResourceDefinition
+  - group: admissionregistration.k8s.io
+    kind: MutatingWebhookConfiguration
+  - group: admissionregistration.k8s.io
+    kind: ValidatingWebhookConfiguration
+  
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  
+  roles:
+  - name: platform-admin
+    description: Platform administrators
+    policies:
+    - p, proj:platform:platform-admin, applications, *, platform/*, allow
+    - p, proj:platform:platform-admin, repositories, *, *, allow
+    - p, proj:platform:platform-admin, certificates, *, *, allow
+    groups:
+    - platform-team
+  
+  - name: developer
+    description: Application developers
+    policies:
+    - p, proj:platform:developer, applications, get, platform/*, allow
+    - p, proj:platform:developer, applications, sync, platform/*, allow
+    groups:
+    - developers

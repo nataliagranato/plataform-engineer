@@ -1,0 +1,264 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: platform-api
+  description: Core Platform API for microservices orchestration
+  labels:
+    platform.io/type: api
+    platform.io/lifecycle: production
+    platform.io/owner: platform-team
+  annotations:
+    github.com/project-slug: nataliagranato/plataform-engineer
+    backstage.io/kubernetes-id: platform-api
+    backstage.io/kubernetes-namespace: platform-system
+    prometheus.io/rule: platform-api-alerts
+    grafana.com/dashboard-url: https://grafana.company.com/d/platform-api
+    argocd/app-name: platform-api
+  tags:
+    - platform
+    - api
+    - golang
+    - kubernetes
+spec:
+  type: service
+  lifecycle: production
+  owner: group:platform-team
+  system: platform-core
+  dependsOn:
+    - resource:platform-database
+    - resource:platform-cache
+  providesApis:
+    - platform-api-v1
+  consumesApis:
+    - kubernetes-api
+    - aws-api
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: platform-api-v1
+  description: Platform API v1 for resource management
+  labels:
+    platform.io/version: v1
+    platform.io/stability: stable
+  annotations:
+    github.com/project-slug: nataliagranato/plataform-engineer
+  tags:
+    - platform
+    - rest
+    - openapi
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:platform-team
+  system: platform-core
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Platform API
+      version: 1.0.0
+      description: Core Platform API for resource management and orchestration
+    servers:
+      - url: https://api.platform.company.com/v1
+        description: Production server
+    paths:
+      /applications:
+        get:
+          summary: List applications
+          responses:
+            '200':
+              description: List of applications
+        post:
+          summary: Create application
+          responses:
+            '201':
+              description: Application created
+      /resources:
+        get:
+          summary: List resources
+          responses:
+            '200':
+              description: List of resources
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: platform-database
+  description: PostgreSQL database for platform services
+  labels:
+    platform.io/type: database
+    platform.io/lifecycle: production
+  annotations:
+    aws.amazon.com/rds-instance-id: platform-prod-db
+    backstage.io/kubernetes-id: postgres
+    backstage.io/kubernetes-namespace: database
+  tags:
+    - database
+    - postgresql
+    - aws-rds
+spec:
+  type: database
+  owner: group:platform-team
+  system: platform-core
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: platform-cache
+  description: Redis cache for platform services
+  labels:
+    platform.io/type: cache
+    platform.io/lifecycle: production
+  annotations:
+    aws.amazon.com/elasticache-cluster-id: platform-prod-cache
+    backstage.io/kubernetes-id: redis
+    backstage.io/kubernetes-namespace: cache
+  tags:
+    - cache
+    - redis
+    - aws-elasticache
+spec:
+  type: cache
+  owner: group:platform-team
+  system: platform-core
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-core
+  description: Core Platform System providing infrastructure abstractions
+  labels:
+    platform.io/lifecycle: production
+  annotations:
+    github.com/project-slug: nataliagranato/plataform-engineer
+  tags:
+    - platform
+    - infrastructure
+    - kubernetes
+spec:
+  owner: group:platform-team
+  domain: platform
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: platform
+  description: Platform Engineering Domain
+  labels:
+    platform.io/lifecycle: production
+  tags:
+    - platform
+    - infrastructure
+spec:
+  owner: group:platform-team
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Platform Engineering Team
+  labels:
+    platform.io/team: platform
+  tags:
+    - team
+    - platform
+spec:
+  type: team
+  profile:
+    displayName: Platform Engineering Team
+    email: platform@company.com
+    picture: https://avatars.githubusercontent.com/platform-team
+  parent: engineering
+  children: []
+  members:
+    - natalia.granato
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: natalia.granato
+  description: Platform Engineer
+  labels:
+    platform.io/role: platform-engineer
+  tags:
+    - platform
+    - kubernetes
+    - aws
+spec:
+  profile:
+    displayName: Natália Granato
+    email: natalia@company.com
+    picture: https://avatars.githubusercontent.com/nataliagranato
+  memberOf:
+    - platform-team
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: user-service
+  description: User management microservice
+  labels:
+    platform.io/type: service
+    platform.io/lifecycle: production
+    platform.io/language: nodejs
+  annotations:
+    github.com/project-slug: company/user-service
+    backstage.io/kubernetes-id: user-service
+    backstage.io/kubernetes-namespace: microservices
+    prometheus.io/rule: user-service-alerts
+    grafana.com/dashboard-url: https://grafana.company.com/d/user-service
+    argocd/app-name: user-service
+  tags:
+    - microservice
+    - nodejs
+    - api
+    - users
+spec:
+  type: service
+  lifecycle: production
+  owner: group:backend-team
+  system: user-management
+  dependsOn:
+    - resource:user-database
+    - component:auth-service
+  providesApis:
+    - user-api-v1
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: frontend-app
+  description: Main frontend application
+  labels:
+    platform.io/type: frontend
+    platform.io/lifecycle: production
+    platform.io/language: react
+  annotations:
+    github.com/project-slug: company/frontend-app
+    backstage.io/kubernetes-id: frontend-app
+    backstage.io/kubernetes-namespace: frontend
+    prometheus.io/rule: frontend-app-alerts
+    grafana.com/dashboard-url: https://grafana.company.com/d/frontend-app
+    argocd/app-name: frontend-app
+  tags:
+    - frontend
+    - react
+    - spa
+    - web
+spec:
+  type: website
+  lifecycle: production
+  owner: group:frontend-team
+  system: user-interface
+  consumesApis:
+    - user-api-v1
+    - auth-api-v1

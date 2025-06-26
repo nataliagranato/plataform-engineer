@@ -1,7 +1,5 @@
 # Platform Engineering Framework
 
-> **Crossplane Is the Cloud-Native Framework for Platform Engineering**
-
 Este repositório implementa uma plataforma completa de engenharia usando as melhores práticas de Cloud Native e GitOps, com Crossplane como núcleo central para abstração e autoatendimento de infraestrutura.
 
 ## 🚀 Quick Start

@@ -8,7 +8,7 @@ repos:
   hooks:
   - id: end-of-file-fixer
   - id: trailing-whitespace
-- repo: https://github.com/jumanjihouse/pre-commit-hooks
-  rev: 3.0.0
+- repo: https://github.com/koalaman/shellcheck-precommit
+  rev: 45211a2533b74312572558bc43486334ce333efc
   hooks:
-  - id: shellcheck
+    - id: shellcheck

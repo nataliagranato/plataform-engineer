@@ -60,7 +60,7 @@ jobs:
           working_directory: infrastructure/terraform
 
       - name: Run Checkov
-        uses: bridgecrewio/checkov-action@7e3930d7acb8482fd506c495250290b269e2e640 # master
+        uses: bridgecrewio/checkov-action@7bd1adbc0a62c96c5a3a4949b4e701ac76adaf42 # master
         with:
           directory: infrastructure/terraform
           framework: terraform
